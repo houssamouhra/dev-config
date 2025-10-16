@@ -1,58 +1,108 @@
 # ===================================================
-# 🔧 Dev Config Installer for Windows PowerShell
-# Links dev-config files from ~/dev-config to current project
+# ⚙️  Dev Config Installer for Windows PowerShell
+# Copies dev-config files from ~/dev-config into current project
 # ===================================================
 
 # Define your dev-config directory
 $ConfigDir = Join-Path $env:USERPROFILE "dev-config"
 
 Write-Host ""
-Write-Host "🚀 Linking dev configuration files from $ConfigDir" -ForegroundColor Cyan
+Write-Host "🚀  Copying dev configuration files from $ConfigDir" -ForegroundColor Cyan
 Write-Host "==================================================="
 
 # Check if dev-config folder exists
 if (-not (Test-Path $ConfigDir)) {
-    Write-Host "❌ Config directory not found at $ConfigDir" -ForegroundColor Red
-    Write-Host "Make sure your dev-config repo is cloned to your user folder." -ForegroundColor DarkYellow
+    Write-Host "❌  Config directory not found at $ConfigDir" -ForegroundColor Red
+    Write-Host "💡  Make sure your dev-config repo is cloned to your user folder." -ForegroundColor Yellow
     exit 1
 }
 
-# Confirm before overwriting any files
+# Confirm before overwriting
 $answer = Read-Host "⚠️  This will overwrite local config files if they exist. Continue? (y/n)"
 if ($answer -ne 'y') {
-    Write-Host "❌ Aborted by user." -ForegroundColor Red
+    Write-Host "❌  Aborted by user." -ForegroundColor Red
     exit 0
 }
 
-# Helper function to safely link files
-function New-ConfigLink($source, $target) {
-    if (Test-Path $target) {
-        Remove-Item $target -Force
+# Helper: Copy with overwrite and create dirs automatically
+function Copy-Config($Source, $Target) {
+    if (-not (Test-Path $Source)) {
+        Write-Host "⚠️  Skipped: source not found → $Source" -ForegroundColor DarkYellow
+        return
     }
-    New-Item -ItemType SymbolicLink -Path $target -Target $source | Out-Null
-    Write-Host "✅ Linked $target → $source" -ForegroundColor Green
+
+    $TargetDir = Split-Path $Target -Parent
+    if (-not (Test-Path $TargetDir)) {
+        New-Item -ItemType Directory -Path $TargetDir | Out-Null
+    }
+
+    Copy-Item -Force -Recurse $Source $Target
+    Write-Host "✅  Copied $Source → $Target" -ForegroundColor Green
 }
 
 # ===================================================
-# 📦 Core config files
+# 📦  Core config files
 # ===================================================
-New-ConfigLink "$ConfigDir\.husky" ".husky"
-New-ConfigLink "$ConfigDir\.editorconfig" ".editorconfig"
-New-ConfigLink "$ConfigDir\.gitattributes" ".gitattributes"
-New-ConfigLink "$ConfigDir\.gitignore" ".gitignore"
-New-ConfigLink "$ConfigDir\.prettierrc" ".prettierrc"
-New-ConfigLink "$ConfigDir\eslint.config.mjs" "eslint.config.mjs"
-New-ConfigLink "$ConfigDir\commitlint.config.json" "commitlint.config.json"
+Copy-Config "$ConfigDir\.husky" ".husky"
+Copy-Config "$ConfigDir\.editorconfig" ".editorconfig"
+Copy-Config "$ConfigDir\.gitattributes" ".gitattributes"
+Copy-Config "$ConfigDir\.gitignore" ".gitignore"
+Copy-Config "$ConfigDir\.prettierrc" ".prettierrc"
+Copy-Config "$ConfigDir\commitlint.config.js" "commitlint.config.js"
+Copy-Config "$ConfigDir\lint-staged.config.js" "lint-staged.config.js"
+Copy-Config "$ConfigDir\eslint.config.js" "eslint.config.js"
 
 # ===================================================
-# 🏁 Finish
+# 📦 Merge package.json (Vite + dev-config)
+# ===================================================
+$DevPkg = Join-Path $ConfigDir "package.json"
+$TargetPkg = "package.json"
+
+if (Test-Path $DevPkg -and Test-Path $TargetPkg) {
+    Write-Host ""
+    Write-Host "🔄  Merging dev-config package.json with project package.json..." -ForegroundColor Cyan
+
+    # Parse both JSON files
+    $devJson = Get-Content $DevPkg -Raw | ConvertFrom-Json
+    $targetJson = Get-Content $TargetPkg -Raw | ConvertFrom-Json
+
+    # --- Merge scripts ---
+    foreach ($key in $devJson.scripts.PSObject.Properties.Name) {
+        $targetJson.scripts.$key = $devJson.scripts.$key
+    }
+
+    # --- Merge dependencies (if exist) ---
+    if ($devJson.PSObject.Properties.Name -contains 'dependencies') {
+        foreach ($key in $devJson.dependencies.PSObject.Properties.Name) {
+            $targetJson.dependencies.$key = $devJson.dependencies.$key
+        }
+    }
+
+    # --- Merge devDependencies ---
+    if (-not $targetJson.PSObject.Properties.Name -contains 'devDependencies') {
+        $targetJson | Add-Member -MemberType NoteProperty -Name 'devDependencies' -Value @{}
+    }
+    foreach ($key in $devJson.devDependencies.PSObject.Properties.Name) {
+        $targetJson.devDependencies.$key = $devJson.devDependencies.$key
+    }
+
+    # Save result back
+    $targetJson | ConvertTo-Json -Depth 10 | Set-Content $TargetPkg -Encoding UTF8
+    Write-Host "✅  package.json merged successfully!" -ForegroundColor Green
+} else {
+    Write-Host "⚠️  Skipped package.json merge — one of the files was not found." -ForegroundColor DarkYellow
+}
+
+# ===================================================
+# 🏁  Finish
 # ===================================================
 Write-Host ""
-Write-Host "✨ All configuration files have been linked successfully!" -ForegroundColor Yellow
+Write-Host "✨  All configuration files copied successfully!" -ForegroundColor Yellow
 Write-Host "---------------------------------------------------"
-Write-Host "You can now run your usual commands:" -ForegroundColor DarkGray
-Write-Host "  pnpm install"
-Write-Host "  pnpm lint"
-Write-Host "  pnpm format"
+Write-Host "🧠  Next recommended steps:" -ForegroundColor Cyan
+Write-Host "   pnpm install"
+Write-Host "   pnpm lint"
+Write-Host "   pnpm format"
 Write-Host "---------------------------------------------------"
+Write-Host "🫡  Setup complete, sir!"
 Write-Host ""
