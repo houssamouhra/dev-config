@@ -36,13 +36,13 @@ function New-ConfigLink($source, $target) {
 # ===================================================
 # 📦 Core config files
 # ===================================================
-Link-Config "$ConfigDir\.husky" ".husky"
-Link-Config "$ConfigDir\.editorconfig" ".editorconfig"
-Link-Config "$ConfigDir\.gitattributes" ".gitattributes"
-Link-Config "$ConfigDir\.gitignore" ".gitignore"
-Link-Config "$ConfigDir\.prettierrc" ".prettierrc"
-Link-Config "$ConfigDir\eslint.config.mjs" "eslint.config.mjs"
-Link-Config "$ConfigDir\commitlint.config.json" "commitlint.config.json"
+New-ConfigLink "$ConfigDir\.husky" ".husky"
+New-ConfigLink "$ConfigDir\.editorconfig" ".editorconfig"
+New-ConfigLink "$ConfigDir\.gitattributes" ".gitattributes"
+New-ConfigLink "$ConfigDir\.gitignore" ".gitignore"
+New-ConfigLink "$ConfigDir\.prettierrc" ".prettierrc"
+New-ConfigLink "$ConfigDir\eslint.config.mjs" "eslint.config.mjs"
+New-ConfigLink "$ConfigDir\commitlint.config.json" "commitlint.config.json"
 
 # ===================================================
 # 🏁 Finish
