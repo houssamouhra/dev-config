@@ -32,7 +32,7 @@ function Copy-Config($Source, $Target) {
     }
 
     $TargetDir = Split-Path $Target -Parent
-    if (-not (Test-Path $TargetDir)) {
+    if ($TargetDir -and -not (Test-Path $TargetDir)) {
         New-Item -ItemType Directory -Path $TargetDir | Out-Null
     }
 
@@ -58,7 +58,7 @@ Copy-Config "$ConfigDir\eslint.config.js" "eslint.config.js"
 $DevPkg = Join-Path $ConfigDir "package.json"
 $TargetPkg = "package.json"
 
-if (Test-Path $DevPkg -and Test-Path $TargetPkg) {
+if ((Test-Path $DevPkg) -and (Test-Path $TargetPkg)) {    
     Write-Host ""
     Write-Host "🔄  Merging dev-config package.json with project package.json..." -ForegroundColor Cyan
 
