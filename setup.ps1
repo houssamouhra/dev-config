@@ -66,31 +66,113 @@ if ((Test-Path $DevPkg) -and (Test-Path $TargetPkg)) {
     $devJson = Get-Content $DevPkg -Raw | ConvertFrom-Json
     $targetJson = Get-Content $TargetPkg -Raw | ConvertFrom-Json
 
-    # --- Merge scripts ---
-    foreach ($key in $devJson.scripts.PSObject.Properties.Name) {
-        $targetJson.scripts.$key = $devJson.scripts.$key
+    # --- Helper: Convert PSCustomObject to Hashtable ---
+    function Convert-ToHashtable($obj) {
+        if ($null -eq $obj) { return @{} }
+        if ($obj -is [System.Collections.IDictionary]) { return $obj }
+        $hash = @{}
+        foreach ($prop in $obj.PSObject.Properties) {
+            if ($null -ne $prop.Value -and ($prop.Value -is [PSCustomObject])) {
+                $hash[$prop.Name] = Convert-ToHashtable $prop.Value
+            } else {
+                $hash[$prop.Name] = $prop.Value
+            }
+        }
+        return $hash
+    }
+
+    # --- Convert nested objects to hashtables ---
+    $targetJson = Convert-ToHashtable $targetJson
+    $devJson = Convert-ToHashtable $devJson
+
+    # Ensure sections exist
+    if (-not $targetJson.ContainsKey('scripts')) { $targetJson['scripts'] = @{} }
+    if (-not $targetJson.ContainsKey('dependencies')) { $targetJson['dependencies'] = @{} }
+    if (-not $targetJson.ContainsKey('devDependencies')) { $targetJson['devDependencies'] = @{} }
+
+    # --- Merge scripts (dev-config order priority) ---
+    foreach ($key in $devJson['scripts'].Keys) {
+        $targetJson['scripts'][$key] = $devJson['scripts'][$key]
     }
 
     # --- Merge dependencies (if exist) ---
-    if ($devJson.PSObject.Properties.Name -contains 'dependencies') {
-        foreach ($key in $devJson.dependencies.PSObject.Properties.Name) {
-            $targetJson.dependencies.$key = $devJson.dependencies.$key
+    if ($devJson.ContainsKey('dependencies')) {
+        foreach ($key in $devJson['dependencies'].Keys) {
+            $targetJson['dependencies'][$key] = $devJson['dependencies'][$key]
         }
     }
 
-    # --- Merge devDependencies ---
-    if (-not $targetJson.PSObject.Properties.Name -contains 'devDependencies') {
-        $targetJson | Add-Member -MemberType NoteProperty -Name 'devDependencies' -Value @{}
-    }
-    foreach ($key in $devJson.devDependencies.PSObject.Properties.Name) {
-        $targetJson.devDependencies.$key = $devJson.devDependencies.$key
+    # --- Merge devDependencies (dev-config order priority) ---
+    if ($devJson.ContainsKey('devDependencies')) {
+        foreach ($key in $devJson['devDependencies'].Keys) {
+            $targetJson['devDependencies'][$key] = $devJson['devDependencies'][$key]
+        }
     }
 
-    # Save result back
-    $targetJson | ConvertTo-Json -Depth 10 | Set-Content $TargetPkg -Encoding UTF8
+    # --- Build ordered structure for pretty JSON ---
+    $ordered = [ordered]@{
+        name = $targetJson.name
+        private = $targetJson.private
+        version = $targetJson.version
+        type = $targetJson.type
+        scripts = [ordered]@{}
+        dependencies = [ordered]@{}
+        devDependencies = [ordered]@{}
+    }
+
+    # === Custom order for scripts (manual control) ===
+    $preferredScriptOrder = @(
+       'lint', 'format', 'build', 'preview',
+       'commitlint', 'lint:fix', 'prepare', 'dev'
+    )
+    foreach ($key in $preferredScriptOrder) {
+      if ($targetJson['scripts'].ContainsKey($key)) {
+        $ordered.scripts[$key] = $targetJson['scripts'][$key]
+      }
+    }
+
+    # === Dependencies: React first, rest follow ===
+    foreach ($key in @('react', 'react-dom')) {
+      if ($targetJson['dependencies'].ContainsKey($key)) {
+        $ordered.dependencies[$key] = $targetJson['dependencies'][$key]
+      }
+    }
+
+    # Add a “catch-all” for missing devDependencies
+    foreach ($key in $targetJson['dependencies'].Keys) {
+      if (-not $ordered.dependencies.Contains($key)) {
+        $ordered.dependencies[$key] = $targetJson['dependencies'][$key]
+      }
+    }
+
+    # === Custom order for devDependencies ===
+    $preferredDevDepOrder = @(
+        'eslint-plugin-react', '@types/react-dom', 'globals',
+        '@commitlint/cli', '@eslint/js', '@commitlint/config-conventional',
+        '@types/react', 'eslint-plugin-react-refresh', 'eslint',
+        'vite', 'husky', 'eslint-plugin-jsx-a11y', '@vitejs/plugin-react',
+        'prettier', 'lint-staged', 'eslint-plugin-react-hooks',
+        'eslint-config-prettier'
+    )
+
+    foreach ($key in $preferredDevDepOrder) {
+      if ($targetJson['devDependencies'].ContainsKey($key)) {
+        $ordered.devDependencies[$key] = $targetJson['devDependencies'][$key]
+      }
+    }
+
+    # Add a “catch-all” for missing devDependencies
+    foreach ($key in $targetJson['devDependencies'].Keys) {
+      if (-not $ordered.devDependencies.Contains($key)) {
+        $ordered.devDependencies[$key] = $targetJson['devDependencies'][$key]
+      }
+    }
+
+    # --- Save merged and ordered result ---
+    $ordered | ConvertTo-Json -Depth 10 | Set-Content $TargetPkg -Encoding UTF8
     Write-Host "✅  package.json merged successfully!" -ForegroundColor Green
-} else {
-    Write-Host "⚠️  Skipped package.json merge — one of the files was not found." -ForegroundColor DarkYellow
+    } else {
+       Write-Host "⚠️  Skipped package.json merge — one of the files was not found." -ForegroundColor DarkYellow
 }
 
 # ===================================================
